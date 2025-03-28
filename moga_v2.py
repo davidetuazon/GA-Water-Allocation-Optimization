@@ -227,7 +227,7 @@ if __name__ == '__main__':
             fitness_scores = best_solution.fitness.values
             
             print(f"\nBest Solution for {objective_names[i]}:\n")
-            print(f'Allocation Matrix:\n {np.round(allocation_matrix, 4)}')
+            print(f'Weekly Water Allocation Matrix: (m³ allocated per farm across periods)\n {np.round(allocation_matrix, 2)}')
             
             print("\nObjective Scores:")
             print(f"Equity Score: {fitness_scores[0]:.4f}")
