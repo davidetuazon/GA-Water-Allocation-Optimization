@@ -5,8 +5,6 @@ DEV NOTES:
         3. STILL ON THE LOOKOUT FOR A BETTER MUTATE FUNCTION
 """
 
-
-
 import numpy as np
 import random
 from deap import creator, tools, base, algorithms
@@ -107,6 +105,8 @@ toolbox.register('evaluate', evaluate)
 
 
 # STILL FNDING A BETTER ALGORITHM TO MUTATE
+# GENERALLY SPEAKING, MUTATE INTRODUCES RANDOM CHANGES TO EACH INDIVIDUAL IN THE POPULATION
+# THIS HELPS THE ALGORITHM TO HAVE A GENETIC DIVERSITY AND TO PREVENT IT FROM GETTING STUCK IN LOCAL OPTIMA
 def mutate(individual, eta=5, indpb=0.8, adaptive=True):
     individual = np.array(individual).reshape((NUM_FARM, NUM_PERIODS))
 
