@@ -180,6 +180,7 @@ def run_moga(pop_size=200, ngen=2000, cxpb=0.65, mutpb=0.35, stall_generations=2
     prev_best = None
     stall_count = 0
 
+    # eaMuPlusLambda USES AN ELITIST STRATEGY THAT HELPS MAINTAIN DIVERSITY AND ENSURES STEADY IMPROVEMENT IN SOLUTIONS
     for gen in range(ngen):
         population, logbook = algorithms.eaMuPlusLambda(
             population, toolbox,
@@ -218,7 +219,7 @@ if __name__ == '__main__':
     if len(pareto_front) > 0:
         # FIND BEST SOLUTION FOR EACH OBJECTIVE
         best_solutions = [
-            min(pareto_front, key=lambda ind: ind.fitness.values[i]) 
+            min(pareto_front, key=lambda ind: abs(ind.fitness.values[i] - 1)) # SELECTS THE VALUE CLOSER TO 1
             for i in range(len(pareto_front[0].fitness.values))
         ]
 
@@ -229,7 +230,7 @@ if __name__ == '__main__':
             fitness_scores = best_solution.fitness.values
             
             print(f"\nBest Solution for {objective_names[i]}:\n")
-            print(f'Weekly Water Allocation Matrix: (m³ allocated per farm across periods)\n {np.round(allocation_matrix, 2)}')
+            print(f'Weekly Water Allocation Matrix:\n(m³ allocated per farm across periods)\n {np.round(allocation_matrix, 2)}')
             
             print("\nObjective Scores:")
             print(f"Equity Score: {fitness_scores[0]:.4f}")
