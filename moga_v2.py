@@ -78,6 +78,7 @@ toolbox.register('population', tools.initRepeat, list, toolbox.individual)
 
 
 # EVALUATES EACH INIDVIDUAL BASE ON EQUITY, DEMAND FULFILLMENT, AND SUSTAINABILITY
+# MIGHT NEED REFINEMENT ONCE REAL-WORLD DATA IS AVAILABLE
 def evaluate(individual):   # FITNESS FUNCTION
     alloc_matrix = np.array(individual).reshape((NUM_FARM, NUM_PERIODS))
 
@@ -109,29 +110,28 @@ toolbox.register('evaluate', evaluate)
 # STILL FNDING A BETTER ALGORITHM TO MUTATE
 # GENERALLY SPEAKING, MUTATE INTRODUCES RANDOM CHANGES TO EACH INDIVIDUAL IN THE POPULATION
 # THIS HELPS THE ALGORITHM TO HAVE A GENETIC DIVERSITY AND TO PREVENT IT FROM GETTING STUCK IN LOCAL OPTIMA
-def mutate(individual, eta=5, indpb=0.8, adaptive=True):
+def mutate(individual, indpb=0.6, swap_prob=0.2, noise_factor=0.1, adaptive=True):
     individual = np.array(individual).reshape((NUM_FARM, NUM_PERIODS))
-
-    # INCREASES EXPLORATION RANGE DYNAMICALLY
-    range_factor = 0.4 if adaptive else 0.2  
-    std_dev_before = np.std(individual)  # CHECKS DIVERSITY BEFORE MUTATION STARTS
 
     for i in range(NUM_PERIODS):
         for j in range(NUM_FARM):
             if random.random() < indpb:
                 max_water = min(WEEKLY_WATER_DEMAND[i], WEEKLY_WATER_SUPPLY[i])
-                range_limit = range_factor * max(1e-6, max_water)  # AVOID 0 OR NEGATIVE RANGE
+                range_limit = 0.3 * max_water   # DYNAMIC MUTATION RANGE
                 min_bound = max(0, individual[j, i] - range_limit)
-                max_bound = max(min_bound, min(max_water, individual[j, i] + range_limit))  # MAX_BOUND >= MIN_BOUND
+                max_bound = max(max_water, individual[j, i] + range_limit)
 
-                std_dev = max(1e-6, (max_bound - min_bound) * 0.3)  # ENSURE NON-NEGATIVE SCALE
-                delta = np.random.normal(0, std_dev)
-
+                # GAUSSIAN PERTURBATION
+                delta = np.random.normal(0, range_limit * 0.2)
                 new_value = individual[j, i] + delta
 
-                # APPLY ADDITIONAL RANDOMNESS FOR DIVERSITY (10% CHANCE)
-                if random.random() < 0.1:
-                    new_value += random.uniform(-0.2 * max_water, 0.2 * max_water)
+                # OCCASIONALLY SWAP ALLOCATIONS BETWEEN FARMS
+                if random.random() < swap_prob:
+                    swap_farm = random.randint(0, NUM_FARM - 1)
+                    individual[j, i], individual[swap_farm, i] = individual[swap_farm, i], individual[j, i]
+
+                # ADDS SLIGHT RANDOM NOISE TO HELP AVOID LOCAL MINIMA
+                new_value += random.uniform(-noise_factor * max_water, noise_factor * max_water)
 
                 individual[j, i] = np.clip(new_value, min_bound, max_bound)
 
@@ -144,7 +144,7 @@ toolbox.register("mutate", mutate)
 # SIMULATED BINARY CROSSOVER (SBX) CREATES TWO OFFSPRING FROM TWO PARENTS BY GENERATING VALUES THAT LIE BETWEEN THE PARENT'S VALUES
 # ALLOWS CONTROLLED EXPLORATION AND EXPLOITATION
 # COMMON IN MOGA
-def sbx_crossover(parent1, parent2, eta=15, adaptive=True):
+def sbx_crossover(parent1, parent2, eta=5, adaptive=True):
     size = len(parent1)
     offspring1, offspring2 = parent1[:], parent2[:]
     
@@ -169,7 +169,7 @@ toolbox.register("mate", sbx_crossover)
 toolbox.register("select", tools.selNSGA2, nd='standard')
 
 
-def run_moga(pop_size=200, ngen=2000, cxpb=0.65, mutpb=0.35, stall_generations=250, min_improvement=1e-3):
+def run_moga(pop_size=200, ngen=2000, cxpb=0.6, mutpb=0.4, stall_generations=500, min_improvement=1e-3):
     population = toolbox.population(n=pop_size)
     hof = tools.ParetoFront()
 
@@ -182,6 +182,7 @@ def run_moga(pop_size=200, ngen=2000, cxpb=0.65, mutpb=0.35, stall_generations=2
 
     # eaMuPlusLambda USES AN ELITIST STRATEGY THAT HELPS MAINTAIN DIVERSITY AND ENSURES STEADY IMPROVEMENT IN SOLUTIONS
     for gen in range(ngen):
+        # RUN ONE GENERATION AT A TIME
         population, logbook = algorithms.eaMuPlusLambda(
             population, toolbox,
             mu=pop_size, lambda_=pop_size,
@@ -190,7 +191,10 @@ def run_moga(pop_size=200, ngen=2000, cxpb=0.65, mutpb=0.35, stall_generations=2
             halloffame=hof, verbose=False
         )
 
-        best_fitness = np.min([ind.fitness.values for ind in hof], axis=0) if len(hof) > 0 else None
+        if len(hof) > 0:
+            best_fitness = np.array([ind.fitness.values for ind in hof]).max(axis=0)
+        else:
+            best_fitness = None
 
         # EARLY STOPPING THE ALGORITHM ONCE STALL COUNT IS REACHED
         if best_fitness is not None:
