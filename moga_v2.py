@@ -110,7 +110,7 @@ toolbox.register('evaluate', evaluate)
 # STILL FNDING A BETTER ALGORITHM TO MUTATE
 # GENERALLY SPEAKING, MUTATE INTRODUCES RANDOM CHANGES TO EACH INDIVIDUAL IN THE POPULATION
 # THIS HELPS THE ALGORITHM TO HAVE A GENETIC DIVERSITY AND TO PREVENT IT FROM GETTING STUCK IN LOCAL OPTIMA
-def mutate(individual, indpb=0.6, swap_prob=0.2, noise_factor=0.1, adaptive=True):
+def mutate(individual, indpb=0.5, swap_prob=0.2, noise_factor=0.1):
     individual = np.array(individual).reshape((NUM_FARM, NUM_PERIODS))
 
     for i in range(NUM_PERIODS):
@@ -128,7 +128,8 @@ def mutate(individual, indpb=0.6, swap_prob=0.2, noise_factor=0.1, adaptive=True
                 # OCCASIONALLY SWAP ALLOCATIONS BETWEEN FARMS
                 if random.random() < swap_prob:
                     swap_farm = random.randint(0, NUM_FARM - 1)
-                    individual[j, i], individual[swap_farm, i] = individual[swap_farm, i], individual[j, i]
+                    if individual[j, i] + individual[swap_farm, i] <= max_water:    # ENSURES FEASIBILITY
+                        individual[j, i], individual[swap_farm, i] = individual[swap_farm, i], individual[j, i]
 
                 # ADDS SLIGHT RANDOM NOISE TO HELP AVOID LOCAL MINIMA
                 new_value += random.uniform(-noise_factor * max_water, noise_factor * max_water)
