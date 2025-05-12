@@ -36,7 +36,7 @@ WATER_DEMAND = ETC_VALUES * 7    # COMPUTE WATER DEMAND BASED ON ETc AND MULTIPL
 WEEKLY_WATER_DEMAND = WATER_DEMAND * NUM_FARM
 
 # WATER SUPPLY FROM DAM
-TOTAL_DAM_RELEASE = 467e6
+TOTAL_DAM_RELEASE = 518e6
 
 # ADDS VARIABILITY SO THAT DAMN RELEASE IS NOT SAME FOR ALL RELEASE PERIOD -- REPLACE WITH REAL-WORLD DATA ON DAM RELEASES
 TREND_FACTOR = np.array([0.8, 0.9, 1.1, 1.0])
@@ -45,12 +45,20 @@ NORMALIZED_TREND_FACTOR = TREND_FACTOR / TREND_FACTOR.sum()
 # WEEKLY WATER SUPPLY -- CHANGE TO REAL WOLRD-DATA
 WEEKLY_WATER_SUPPLY = TOTAL_DAM_RELEASE * NORMALIZED_TREND_FACTOR
 
+# REPLACE WITH DATA FROM WEATHER FORECAST API
+RAINFALL_VALUES = np.array([20, 30, 15, 10])
+RAINFALL_VOLUME = RAINFALL_VALUES * 10 # CONVERT TO MM TO M^3
+
+EFFECTIVE_RAINFALL = RAINFALL_VOLUME * 0.75 #ADJUSTABLE EFFICIENCY BASED ON HOW MUCH RAINFALL IS USABLE
+
+# ASSUME RETENTION CAPACITY OF 20% OF ETC AS DUMMY
+SOIL_RETENTION_COEFF = 0.2
+
 
 creator.create('FitnessMulti', base.Fitness, weights=(1.0, 1.0, 1.0))
 creator.create('Individual', list, fitness=creator.FitnessMulti)
 
 
-# WILL ADD SOIL RETENTION AND RAINFALL WHEN REAL-WORLD DATA IS AVAILABLE
 def create_individual():
     individual = np.zeros((NUM_FARM, NUM_PERIODS))
 
@@ -95,8 +103,20 @@ def evaluate(individual):   # FITNESS FUNCTION
     equity_score = 1 - (np.std(alloc_matrix) / (np.mean(alloc_matrix) + epsilon))
     equity_score = np.clip(equity_score, 0, 1) # NORMALIZE VALUES BETWEEN 0 TO 1 IF WATER ALLOCATION IS NEARLY UNIFORM
 
+    # ADD RAINFALL AND SOIL RETENTION VARIABLES
+    effective_rainfall = EFFECTIVE_RAINFALL[np.newaxis, :]
+    etc = ETC_VALUES[np.newaxis, :]
+
+    # SIMULATE RETAINED WATER FOR PREVIOUS WEEK
+    soil_storage = np.zeros((NUM_FARM, NUM_PERIODS))
+    for t in range(1, NUM_PERIODS):
+        soil_storage[:, t] = (etc[:, t - 1] * SOIL_RETENTION_COEFF)
+
+    adjusted_demand = np.maximum(1, etc - effective_rainfall - soil_storage)
+    total_demand = adjusted_demand.sum()
+
     # DEMAND FULFILLMENT SCORE = SUM(MIN(WATER ALLOCATION, WATER REQUIREMENT)) / SUM(WATER REQUIREMENT)
-    demand_fulfillment_score = np.sum(np.minimum(alloc_matrix, WEEKLY_WATER_DEMAND[np.newaxis, :])) / (NUM_FARM * np.sum(WEEKLY_WATER_DEMAND) + epsilon)
+    demand_fulfillment_score = np.sum(np.minimum(alloc_matrix, adjusted_demand)) / (total_demand + epsilon)
 
     # SUSTAINABILITY SCORE = 1 - (SUM(WATER ALLOCATION) / AVAILABLE WATER SUPPLY)
     sustainability_score = 1 - (np.sum(alloc_matrix) / (np.sum(WEEKLY_WATER_SUPPLY) + epsilon))
@@ -223,25 +243,19 @@ if __name__ == '__main__':
 
     if len(pareto_front) > 0:
         # FIND BEST SOLUTION FOR EACH OBJECTIVE
-        best_solutions = [
-            min(pareto_front, key=lambda ind: abs(ind.fitness.values[i] - 1)) # SELECTS THE VALUE CLOSER TO 1
-            for i in range(len(pareto_front[0].fitness.values))
-        ]
+        best_solution = min(pareto_front, key=lambda ind: abs(ind.fitness.values[0] - 1)) # SELECTS THE VALUE CLOSER TO 1
 
-        objective_names = ["EQUITY", "DEMAND FULLFILMENT", "SUSTAINABILITY"]
-        
-        for i, best_solution in enumerate(best_solutions):
-            allocation_matrix = np.array(best_solution).reshape((NUM_FARM, NUM_PERIODS))
-            fitness_scores = best_solution.fitness.values
+        allocation_matrix = np.array(best_solution).reshape((NUM_FARM, NUM_PERIODS))
+        fitness_scores = best_solution.fitness.values
             
-            print(f"\nBest Solution for {objective_names[i]}:\n")
-            print(f'Weekly Water Allocation Matrix:\n(m³ allocated per farm across periods)\n {np.round(allocation_matrix, 2)}')
+        print(f"\nBest Solution for Monthly Water Allocation:\n")
+        print(f'Weekly Water Allocation Matrix:\n(m³ allocated per farm across periods)\n {np.round(allocation_matrix, 2)}')
             
-            print("\nObjective Scores:")
-            print(f"Equity Score: {fitness_scores[0]:.4f}")
-            print(f"Demand Fulfillment Score: {fitness_scores[1]:.4f}")
-            print(f"Sustainability Score: {fitness_scores[2]:.4f}")
-            print("-" * 60)
+        print("\nObjective Scores:")
+        print(f"Equity Score: {fitness_scores[0]:.4f}")
+        print(f"Demand Fulfillment Score: {fitness_scores[1]:.4f}")
+        print(f"Sustainability Score: {fitness_scores[2]:.4f}")
+        print("-" * 60)
 
     else:
         print("No valid solutions found.")
