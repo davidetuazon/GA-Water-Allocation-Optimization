@@ -54,6 +54,13 @@ EFFECTIVE_RAINFALL = RAINFALL_VOLUME * 0.75 #ADJUSTABLE EFFICIENCY BASED ON HOW 
 # ASSUME RETENTION CAPACITY OF 20% OF ETC AS DUMMY
 SOIL_RETENTION_COEFF = 0.2
 
+PRECOMPUTED_ETC = ETC_VALUES[np.newaxis, :]
+PRECOMPUTED_EFFECTIVE_RAIN = EFFECTIVE_RAINFALL[np.newaxis, :]
+PRECOMPUTED_SOIL_STORAGE = np.zeros((NUM_FARM, NUM_PERIODS))
+for t in range(1, NUM_PERIODS):
+    PRECOMPUTED_SOIL_STORAGE[:, t] = (PRECOMPUTED_ETC[:, t - 1] * SOIL_RETENTION_COEFF)
+
+
 
 creator.create('FitnessMulti', base.Fitness, weights=(1.0, 1.0, 1.0))
 creator.create('Individual', list, fitness=creator.FitnessMulti)
@@ -103,16 +110,7 @@ def evaluate(individual):   # FITNESS FUNCTION
     equity_score = 1 - (np.std(alloc_matrix) / (np.mean(alloc_matrix) + epsilon))
     equity_score = np.clip(equity_score, 0, 1) # NORMALIZE VALUES BETWEEN 0 TO 1 IF WATER ALLOCATION IS NEARLY UNIFORM
 
-    # ADD RAINFALL AND SOIL RETENTION VARIABLES
-    effective_rainfall = EFFECTIVE_RAINFALL[np.newaxis, :]
-    etc = ETC_VALUES[np.newaxis, :]
-
-    # SIMULATE RETAINED WATER FOR PREVIOUS WEEK
-    soil_storage = np.zeros((NUM_FARM, NUM_PERIODS))
-    for t in range(1, NUM_PERIODS):
-        soil_storage[:, t] = (etc[:, t - 1] * SOIL_RETENTION_COEFF)
-
-    adjusted_demand = np.maximum(1, etc - effective_rainfall - soil_storage)
+    adjusted_demand = np.maximum(1, PRECOMPUTED_ETC - PRECOMPUTED_EFFECTIVE_RAIN - PRECOMPUTED_SOIL_STORAGE)
     total_demand = adjusted_demand.sum()
 
     # DEMAND FULFILLMENT SCORE = SUM(MIN(WATER ALLOCATION, WATER REQUIREMENT)) / SUM(WATER REQUIREMENT)
@@ -190,7 +188,7 @@ toolbox.register("mate", sbx_crossover)
 toolbox.register("select", tools.selNSGA2, nd='standard')
 
 
-def run_moga(pop_size=200, ngen=2000, cxpb=0.6, mutpb=0.4, stall_generations=500, min_improvement=1e-3):
+def run_moga(pop_size=100, ngen=1000, cxpb=0.6, mutpb=0.4, stall_generations=300, min_improvement=1e-3):
     population = toolbox.population(n=pop_size)
     hof = tools.ParetoFront()
 
