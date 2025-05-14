@@ -230,6 +230,8 @@ def run_moga(pop_size=100, ngen=1000, cxpb=0.6, mutpb=0.4, stall_generations=300
     prev_best = None
     stall_count = 0
 
+    all_individuals = []
+
     # eaMuPlusLambda USES AN ELITIST STRATEGY THAT HELPS MAINTAIN DIVERSITY AND ENSURES STEADY IMPROVEMENT IN SOLUTIONS
     for gen in range(ngen):
         # RUN ONE GENERATION AT A TIME
@@ -267,13 +269,15 @@ def run_moga(pop_size=100, ngen=1000, cxpb=0.6, mutpb=0.4, stall_generations=300
         if stall_count >= stall_generations:
             print(f"\nEarly stopping at generation {gen + 1} due to stagnation.")
             break
+
+        all_individuals.extend(population)
         
-    return population, hof, logbook
+    return population, hof, logbook, all_individuals
 
 
 if __name__ == '__main__':
     start = time.time()
-    final_population, pareto_front, logs = run_moga()
+    final_population, pareto_front, logs, all_individuals = run_moga()
 
     if len(pareto_front) > 0:
         # FIND BEST SOLUTION FOR EACH OBJECTIVE
@@ -296,3 +300,25 @@ if __name__ == '__main__':
 
     end = time.time()
     print(f'Time: {end - start:.6f}s')
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # Needed for 3D plotting
+import numpy as np
+
+# Extract fitness values of all individuals
+fitnesses = [ind.fitness.values for ind in all_individuals if ind.fitness.valid]
+fitnesses = np.array(fitnesses)
+
+# 3D Scatter Plot of Objectives
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(111, projection='3d')
+
+ax.scatter(fitnesses[:, 0], fitnesses[:, 1], fitnesses[:, 2], c='blue', marker='o', alpha=0.6)
+
+ax.set_xlabel('Equity Score')
+ax.set_ylabel('Demand Fulfillment Score')
+ax.set_zlabel('Sustainability Score')
+ax.set_title('Objective Trade-offs (All Individuals)')
+
+plt.tight_layout()
+plt.show()
