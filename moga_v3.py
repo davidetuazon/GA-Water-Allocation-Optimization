@@ -6,9 +6,12 @@ DEV NOTES:
 """
 
 import numpy as np
+import pandas as pd
 import random
 from deap import creator, tools, base, algorithms
 import time
+from statsmodels.tsa.arima.model import ARIMA
+
 
 """USING PYTHON'S DEAP LIBRARY FOR A MULTI-OBJECTIVE GENETIC ALGORITHM (MOGA) THAT AIMS TO PROVIDE
 AN OPTIMAL SOLUTION TO WATER ALLOCATION (WEEKLY) AMONG FARMS IN NUEVA ECIJA DURING RICE SEASON."""
@@ -45,21 +48,39 @@ NORMALIZED_TREND_FACTOR = TREND_FACTOR / TREND_FACTOR.sum()
 # WEEKLY WATER SUPPLY -- CHANGE TO REAL WOLRD-DATA
 WEEKLY_WATER_SUPPLY = TOTAL_DAM_RELEASE * NORMALIZED_TREND_FACTOR
 
-# REPLACE WITH DATA FROM WEATHER FORECAST API
-RAINFALL_VALUES = np.array([20, 30, 15, 10])
-RAINFALL_VOLUME = RAINFALL_VALUES * 10 # CONVERT TO MM TO M^3
+# CONVERTS RAINFALL TO M^3
+def rainfall_to_volume(rainfall_mm, conversion_factor=10):
+    return rainfall_mm * conversion_factor
 
-EFFECTIVE_RAINFALL = RAINFALL_VOLUME * 0.75 #ADJUSTABLE EFFICIENCY BASED ON HOW MUCH RAINFALL IS USABLE
 
-# ASSUME RETENTION CAPACITY OF 20% OF ETC AS DUMMY
-SOIL_RETENTION_COEFF = 0.2
+# ADJUSTABLE EFFIECENCY BASED ON HOW MUCH RAIN IS USABLE
+def compute_effective_rainfall(volume, efficiency=0.75):
+    return volume * efficiency
 
-PRECOMPUTED_ETC = ETC_VALUES[np.newaxis, :]
-PRECOMPUTED_EFFECTIVE_RAIN = EFFECTIVE_RAINFALL[np.newaxis, :]
-PRECOMPUTED_SOIL_STORAGE = np.zeros((NUM_FARM, NUM_PERIODS))
-for t in range(1, NUM_PERIODS):
-    PRECOMPUTED_SOIL_STORAGE[:, t] = (PRECOMPUTED_ETC[:, t - 1] * SOIL_RETENTION_COEFF)
 
+# ASSUME RETENTION RATE OF 20% OF ETC AS DUMMY
+def compute_soil_storage(etc, retention_coeff=0.2):
+    soil_storage = np.zeros_like(etc)
+    for t in range(1, etc.shape[1]):
+        soil_storage[:, t] = etc[:, t - 1] * retention_coeff
+
+    return soil_storage
+
+# DUMMY DATA FOR NOW
+rainfall = np.random.gamma(shape=2.0, scale=10.0, size=52)
+
+rainfall_series = pd.Series(rainfall)
+
+model = ARIMA(rainfall_series, order=(1, 1, 1))
+model_fit = model.fit()
+
+forecast = model_fit.forecast(steps=NUM_PERIODS)
+
+forecasted_rainfall = np.maximum(forecast, 0)
+
+print("Forecasted Rainfall (mm):", forecasted_rainfall)
+
+RAINFALL_VALUES = forecasted_rainfall.to_numpy()
 
 
 creator.create('FitnessMulti', base.Fitness, weights=(1.0, 1.0, 1.0))
@@ -106,15 +127,25 @@ def evaluate(individual):   # FITNESS FUNCTION
     # THE CLOSER THE SCORES ARE TO 1 THE BETTER THE SCORES
     epsilon = 1e-6  # PREVENTS DIVISION BY ZERO IN EXTREME CASES
 
+    etc = ETC_VALUES[np.newaxis, :]
+
+    rainfall_volume = rainfall_to_volume(RAINFALL_VALUES)
+    effective_rainfall = compute_effective_rainfall(rainfall_volume)
+    effective_rain = effective_rainfall[np.newaxis, :]
+
+    soil_storage = compute_soil_storage(etc)
+
+    adjusted_demand = np.maximum(1, etc - effective_rain - soil_storage)
+    total_demand = adjusted_demand.sum()
+
     # EQUITY SCORE = 1 - (STD(WATER ALLOCATION) / MEAN(WATER ALLOCATION))
     equity_score = 1 - (np.std(alloc_matrix) / (np.mean(alloc_matrix) + epsilon))
     equity_score = np.clip(equity_score, 0, 1) # NORMALIZE VALUES BETWEEN 0 TO 1 IF WATER ALLOCATION IS NEARLY UNIFORM
 
-    adjusted_demand = np.maximum(1, PRECOMPUTED_ETC - PRECOMPUTED_EFFECTIVE_RAIN - PRECOMPUTED_SOIL_STORAGE)
-    total_demand = adjusted_demand.sum()
-
     # DEMAND FULFILLMENT SCORE = SUM(MIN(WATER ALLOCATION, WATER REQUIREMENT)) / SUM(WATER REQUIREMENT)
-    demand_fulfillment_score = np.sum(np.minimum(alloc_matrix, adjusted_demand)) / (total_demand + epsilon)
+    fulfilled = np.sum(np.minimum(alloc_matrix, adjusted_demand))
+    demand_fulfillment_score = fulfilled / (total_demand + epsilon)
+    demand_fulfillment_score = np.clip(demand_fulfillment_score, 0, 1) # PREVENT SCORE FROM GOING OVER 1
 
     # SUSTAINABILITY SCORE = 1 - (SUM(WATER ALLOCATION) / AVAILABLE WATER SUPPLY)
     sustainability_score = 1 - (np.sum(alloc_matrix) / (np.sum(WEEKLY_WATER_SUPPLY) + epsilon))
@@ -211,7 +242,12 @@ def run_moga(pop_size=100, ngen=1000, cxpb=0.6, mutpb=0.4, stall_generations=300
         )
 
         if len(hof) > 0:
-            best_fitness = np.array([ind.fitness.values for ind in hof]).max(axis=0)
+            for ind in hof:
+                if not ind.fitness.valid:
+                    ind.fitness.values = toolbox.evaluate(ind)
+
+            fitness_array = np.array([ind.fitness.values for ind in hof])
+            best_fitness = np.max(fitness_array, axis=0)
         else:
             best_fitness = None
 
