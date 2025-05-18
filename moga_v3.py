@@ -1,8 +1,9 @@
 """
 DEV NOTES:
         1. PARAMETERS ARE ALWAYS SUBJECT TO CHANGE ONCE REAL-WORLD DATA IS AVAILABLE
-        2. EVALUATE FUNCTION STILL LACKS SOIL RETENTION AND RAINFALL VARIABLES
-        3. STILL ON THE LOOKOUT FOR A BETTER MUTATE FUNCTION
+        2. EVALUATE FUNCTION STILL LACKS A STRONGER SOIL RETENTION AND RAINFALL METRIC
+        3. EVALUATE LACKS STRONGER PENALIZATION FOR OVERUSE AND SCARCITY
+        4. STILL ON THE LOOKOUT FOR A BETTER MUTATE FUNCTION
 """
 
 import numpy as np
@@ -19,7 +20,7 @@ AN OPTIMAL SOLUTION TO WATER ALLOCATION (WEEKLY) AMONG FARMS IN NUEVA ECIJA DURI
 
 # WATER MEASUREMENTS ARE IN CUBIC METER
 # THESE ARE CURRENTLY ALL DUMMY DATA
-NUM_FARM = 10
+NUM_FARM = 5
 FARM_SIZE = 1       # HECTARES(HA)
 NUM_PERIODS = 4     # WEEKS
 
@@ -223,6 +224,11 @@ def run_moga(pop_size=100, ngen=1000, cxpb=0.6, mutpb=0.4, stall_generations=300
     population = toolbox.population(n=pop_size)
     hof = tools.ParetoFront()
 
+    invalid_ind = [ind for ind in population if not ind.fitness.valid]
+    fitnesses = map(toolbox.evaluate, invalid_ind)
+    for ind, fit in zip(invalid_ind, fitnesses):
+        ind.fitness.values = fit
+
     stats = tools.Statistics(lambda ind: ind.fitness.values)
     stats.register('min', np.min, axis=0)
     stats.register("avg", np.mean, axis=0)
@@ -285,10 +291,12 @@ if __name__ == '__main__':
 
         allocation_matrix = np.array(best_solution).reshape((NUM_FARM, NUM_PERIODS))
         fitness_scores = best_solution.fitness.values
-            
+
+        print(f"Weekly Water Demand: \n{WEEKLY_WATER_DEMAND}")    
         print(f"\nBest Solution for Monthly Water Allocation:\n")
         print(f'Weekly Water Allocation Matrix:\n(m³ allocated per farm across periods)\n {np.round(allocation_matrix, 2)}')
-            
+        print(f"\nWeekly Water Demand: \n(m³ required per period)\n {WEEKLY_WATER_DEMAND}")
+        
         print("\nObjective Scores:")
         print(f"Equity Score: {fitness_scores[0]:.4f}")
         print(f"Demand Fulfillment Score: {fitness_scores[1]:.4f}")
